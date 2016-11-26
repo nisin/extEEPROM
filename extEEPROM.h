@@ -86,6 +86,7 @@ class extEEPROM
         byte write(unsigned long addr, byte value);
         byte read(unsigned long addr, byte *values, unsigned int nBytes);
         int read(unsigned long addr);
+        unsigned long capacity();
 
     private:
         uint8_t _eepromAddr;            //eeprom i2c address

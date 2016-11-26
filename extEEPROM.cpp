@@ -54,7 +54,9 @@
 
 #include <extEEPROM.h>
 #include <Wire.h>
-
+#ifdef __AVR_ATtiny85__
+#define BUFFER_LENGTH TinyM_USI_BUF_SIZE
+#endif
 // Constructor.
 // - deviceCapacity is the capacity of a single EEPROM device in
 //   kilobits (kb) and should be one of the values defined in the
@@ -95,7 +97,9 @@ extEEPROM::extEEPROM(eeprom_size_t deviceCapacity, byte nDevice, unsigned int pa
 byte extEEPROM::begin(twiClockFreq_t twiFreq)
 {
     Wire.begin();
-    TWBR = ( (F_CPU / twiFreq) - 16) / 2;
+#ifndef __AVR_ATtiny85__
+ //   TWBR = ( (F_CPU / twiFreq) - 16) / 2;
+#endif
     Wire.beginTransmission(_eepromAddr);
     if (_nAddrBytes == 2) Wire.write(0);      //high addr byte
     Wire.write(0);                            //low addr byte
@@ -205,4 +209,7 @@ int extEEPROM::read(unsigned long addr)
     
     ret = read(addr, &data, 1);
     return ret == 0 ? data : -ret;
+}
+unsigned long extEEPROM::capacity() {
+    return _totalCapacity;
 }
