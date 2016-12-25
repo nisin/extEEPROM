@@ -52,7 +52,7 @@
  * http://creativecommons.org/licenses/by-sa/4.0/                              *
  *-----------------------------------------------------------------------------*/
 
-#include "extEEPROM.h"
+#include <extEEPROM.h>
 #include <Wire.h>
 #ifdef __AVR_ATtiny85__
 #define BUFFER_LENGTH TinyM_USI_BUF_SIZE
