@@ -89,6 +89,7 @@ class extEEPROM
         unsigned long capacity();
 
     private:
+        byte wait_write_cycle(unsigned long addr);
         uint8_t _eepromAddr;            //eeprom i2c address
         uint16_t _dvcCapacity;          //capacity of one EEPROM device, in kbits
         uint8_t _nDevice;               //number of devices on the bus
@@ -96,6 +97,7 @@ class extEEPROM
         uint8_t _csShift;               //number of bits to shift address for chip select bits in control byte
         uint16_t _nAddrBytes;           //number of address bytes (1 or 2)
         unsigned long _totalCapacity;   //capacity of all EEPROM devices on the bus, in bytes
+        unsigned long _lastWriteMillisec;   //
 };
 
 #endif

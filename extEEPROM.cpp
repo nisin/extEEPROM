@@ -52,7 +52,7 @@
  * http://creativecommons.org/licenses/by-sa/4.0/                              *
  *-----------------------------------------------------------------------------*/
 
-#include <extEEPROM.h>
+#include "extEEPROM.h"
 #include <Wire.h>
 #ifdef __AVR_ATtiny85__
 #define BUFFER_LENGTH TinyM_USI_BUF_SIZE
@@ -74,6 +74,7 @@ extEEPROM::extEEPROM(eeprom_size_t deviceCapacity, byte nDevice, unsigned int pa
     _eepromAddr = eepromAddr;
     _totalCapacity = _nDevice * _dvcCapacity * 1024UL / 8;
     _nAddrBytes = deviceCapacity > kbits_16 ? 2 : 1;       //two address bytes needed for eeproms > 16kbits
+    _lastWriteMillisec = 0;
 
     //determine the bitshift needed to isolate the chip select bits from the address to put into the control byte
     uint16_t kb = _dvcCapacity;
@@ -105,7 +106,21 @@ byte extEEPROM::begin(twiClockFreq_t twiFreq)
     Wire.write(0);                            //low addr byte
     return Wire.endTransmission();
 }
-
+byte extEEPROM::wait_write_cycle(unsigned long addr) {
+    uint8_t ctrlByte = _eepromAddr | (byte) (addr >> _csShift);
+    uint8_t txStatus = 0;   //transmit status
+    //wait up to 50ms for the write to complete
+    while (_lastWriteMillisec > millis()) {
+        delayMicroseconds(500);                     //no point in waiting too fast
+        Wire.beginTransmission(ctrlByte);
+        if (_nAddrBytes == 2) Wire.write(0);        //high addr byte
+        Wire.write(0);                              //low addr byte
+        txStatus = Wire.endTransmission();
+        if (txStatus == 0) 
+            _lastWriteMillisec = 0;
+    }
+    return txStatus;
+}
 //Write bytes to external EEPROM.
 //If the I/O would extend past the top of the EEPROM address space,
 //a status of EEPROM_ADDR_ERR is returned. For I2C errors, the status
@@ -116,38 +131,36 @@ byte extEEPROM::write(unsigned long addr, byte *values, unsigned int nBytes)
     uint8_t txStatus = 0;   //transmit status
     uint16_t nWrite;        //number of bytes to write
     uint16_t nPage;         //number of bytes remaining on current page, starting at addr
+    byte buf[BUFFER_LENGTH];
 
     if (addr + nBytes > _totalCapacity) {   //will this write go past the top of the EEPROM?
         return EEPROM_ADDR_ERR;             //yes, tell the caller
     }
 
     while (nBytes > 0) {
+        txStatus=wait_write_cycle(addr);
+        if (txStatus != 0) return txStatus;
         nPage = _pageSize - ( addr & (_pageSize - 1) );
         //find min(nBytes, nPage, BUFFER_LENGTH) -- BUFFER_LENGTH is defined in the Wire library.
         nWrite = nBytes < nPage ? nBytes : nPage;
         nWrite = BUFFER_LENGTH - _nAddrBytes < nWrite ? BUFFER_LENGTH - _nAddrBytes : nWrite;
+        memcpy(buf,value,nWrite);
         ctrlByte = _eepromAddr | (byte) (addr >> _csShift);
         Wire.beginTransmission(ctrlByte);
         if (_nAddrBytes == 2) Wire.write( (byte) (addr >> 8) );   //high addr byte
-        Wire.write( (byte) addr );                                //low addr byte
-        Wire.write(values, nWrite);
+        Wire.write( (byte) (addr & 0xFF) );                                //low addr byte
+        Wire.write( buf, nWrite);
         txStatus = Wire.endTransmission();
         if (txStatus != 0) return txStatus;
 
-        //wait up to 50ms for the write to complete
-        for (uint8_t i=100; i; --i) {
-            delayMicroseconds(500);                     //no point in waiting too fast
-            Wire.beginTransmission(ctrlByte);
-            if (_nAddrBytes == 2) Wire.write(0);        //high addr byte
-            Wire.write(0);                              //low addr byte
-            txStatus = Wire.endTransmission();
-            if (txStatus == 0) break;
-        }
-        if (txStatus != 0) return txStatus;
+        // set last write operation millisec.
+        _lastWriteMillisec = millis() + 5;
 
         addr += nWrite;         //increment the EEPROM address
         values += nWrite;       //increment the input data pointer
         nBytes -= nWrite;       //decrement the number of bytes left to write
+        if (nByte > 0)
+            delayMicroseconds(500);
     }
     return txStatus;
 }
@@ -166,6 +179,8 @@ byte extEEPROM::read(unsigned long addr, byte *values, unsigned int nBytes)
     if (addr + nBytes > _totalCapacity) {   //will this read take us past the top of the EEPROM?
         return EEPROM_ADDR_ERR;             //yes, tell the caller
     }
+    rxStatus=wait_write_cycle(addr);
+    if (rxStatus != 0) return rxStatus;
 
     while (nBytes > 0) {
         nPage = _pageSize - ( addr & (_pageSize - 1) );
@@ -175,7 +190,7 @@ byte extEEPROM::read(unsigned long addr, byte *values, unsigned int nBytes)
         Wire.beginTransmission(ctrlByte);
         if (_nAddrBytes == 2) Wire.write( (byte) (addr >> 8) );   //high addr byte
         Wire.write( (byte) addr );                                //low addr byte
-        rxStatus = Wire.endTransmission();
+        rxStatus = Wire.endTransmission(false);
         if (rxStatus != 0) return rxStatus;        //read error
 
         Wire.requestFrom(ctrlByte, nRead);
